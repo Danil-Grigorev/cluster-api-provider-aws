@@ -20,12 +20,13 @@ import (
 	"context"
 	"testing"
 
+	v2ec2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	rgapiv2 "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	rgapit "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/elbv2"
-	rgapi "github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +40,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/test/mocks"
+	mocksv2 "sigs.k8s.io/cluster-api-provider-aws/v2/test/mocks/v2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -48,102 +50,102 @@ func TestReconcileDelete(t *testing.T) {
 		clusterScope cloud.ClusterScoper
 		elbMocks     func(m *mocks.MockELBAPIMockRecorder)
 		elbv2Mocks   func(m *mocks.MockELBV2APIMockRecorder)
-		rgAPIMocks   func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder)
-		ec2Mocks     func(m *mocks.MockEC2APIMockRecorder)
+		rgAPIMocks   func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder)
+		ec2Mocks     func(m *mocksv2.MockEC2APIMockRecorder)
 		expectErr    bool
 	}{
 		{
 			name:         "eks with cluster opt-out",
 			clusterScope: createManageScope(t, "false", ""),
-			rgAPIMocks:   func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {},
+			rgAPIMocks:   func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {},
 			elbMocks:     func(m *mocks.MockELBAPIMockRecorder) {},
 			elbv2Mocks:   func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:     func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:     func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:    false,
 		},
 		{
 			name:         "eks with no Service load balancers",
 			clusterScope: createManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{},
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{},
 					}, nil
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "eks with no Service load balancers and explicit opt-in",
 			clusterScope: createManageScope(t, "true", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{},
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{},
 					}, nil
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "ec2 cluster with no Service load balancers",
 			clusterScope: createUnManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/cluster1"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{},
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{},
 					}, nil
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "eks with non-Service load balancer",
 			clusterScope: createManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/eks-test-cluster"),
 										Value: aws.String("owned"),
@@ -156,26 +158,26 @@ func TestReconcileDelete(t *testing.T) {
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "ec2 cluster with non-Service load balancer",
 			clusterScope: createUnManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/cluster1"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -188,26 +190,26 @@ func TestReconcileDelete(t *testing.T) {
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "eks with ELB Service load balancer",
 			clusterScope: createManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/eks-test-cluster"),
 										Value: aws.String("owned"),
@@ -228,26 +230,26 @@ func TestReconcileDelete(t *testing.T) {
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "ec2 cluster with ELB Service load balancer",
 			clusterScope: createUnManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/cluster1"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -268,26 +270,26 @@ func TestReconcileDelete(t *testing.T) {
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "eks with NLB Service load balancer",
 			clusterScope: createManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/net/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/eks-test-cluster"),
 										Value: aws.String("owned"),
@@ -308,28 +310,28 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/net/aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elbv2.DeleteLoadBalancerOutput{}, nil)
 			},
-			ec2Mocks:  func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
 		},
 		{
 			name:         "ec2 cluster with NLB Service load balancer",
 			clusterScope: createUnManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/cluster1"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/net/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
-										Key:   aws.String("kubernetes.io/cluster/cluster1"),
+										Key:   aws.String("kubernetes.io/cluster/eks-test-cluster"),
 										Value: aws.String("owned"),
 									},
 									{
@@ -348,26 +350,26 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/net/aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elbv2.DeleteLoadBalancerOutput{}, nil)
 			},
-			ec2Mocks:  func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
 		},
 		{
 			name:         "eks with ALB Service load balancer",
 			clusterScope: createManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/app/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/eks-test-cluster"),
 										Value: aws.String("owned"),
@@ -388,26 +390,26 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/app/aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elbv2.DeleteLoadBalancerOutput{}, nil)
 			},
-			ec2Mocks:  func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
 		},
 		{
 			name:         "ec2 cluster with ALB Service load balancer",
 			clusterScope: createUnManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/cluster1"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/app/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -428,26 +430,26 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/app/aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elbv2.DeleteLoadBalancerOutput{}, nil)
 			},
-			ec2Mocks:  func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
 		},
 		{
 			name:         "eks cluster with different resource types",
 			clusterScope: createManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -460,7 +462,7 @@ func TestReconcileDelete(t *testing.T) {
 							},
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -473,7 +475,7 @@ func TestReconcileDelete(t *testing.T) {
 							},
 							{
 								ResourceARN: aws.String("arn:aws:ec2:eu-west-2:1234567890:security-group/sg-123456"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -498,8 +500,8 @@ func TestReconcileDelete(t *testing.T) {
 					TargetGroupArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
 				})
 			},
-			ec2Mocks: func(m *mocks.MockEC2APIMockRecorder) {
-				m.DeleteSecurityGroupWithContext(gomock.Any(), &ec2.DeleteSecurityGroupInput{
+			ec2Mocks: func(m *mocksv2.MockEC2APIMockRecorder) {
+				m.DeleteSecurityGroup(gomock.Any(), &v2ec2.DeleteSecurityGroupInput{
 					GroupId: aws.String("sg-123456"),
 				})
 			},
@@ -508,20 +510,20 @@ func TestReconcileDelete(t *testing.T) {
 		{
 			name:         "eks should ignore unhandled resources",
 			clusterScope: createManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:ec2:eu-west-2:217426147237:s3/somebucket"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/eks-test-cluster"),
 										Value: aws.String("owned"),
@@ -542,26 +544,26 @@ func TestReconcileDelete(t *testing.T) {
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "eks with security group created by EKS",
 			clusterScope: createManageScope(t, "", ""),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:ec2:eu-west-2:1234567890:security-group/sg-123456"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -582,26 +584,26 @@ func TestReconcileDelete(t *testing.T) {
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 		{
 			name:         "eks cluster with all clean-up funcs explicitly enabled",
 			clusterScope: createManageScope(t, "", "load-balancer,target-group,security-group"),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -614,7 +616,7 @@ func TestReconcileDelete(t *testing.T) {
 							},
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -627,7 +629,7 @@ func TestReconcileDelete(t *testing.T) {
 							},
 							{
 								ResourceARN: aws.String("arn:aws:ec2:eu-west-2:1234567890:security-group/sg-123456"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -652,8 +654,8 @@ func TestReconcileDelete(t *testing.T) {
 					TargetGroupArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
 				})
 			},
-			ec2Mocks: func(m *mocks.MockEC2APIMockRecorder) {
-				m.DeleteSecurityGroupWithContext(gomock.Any(), &ec2.DeleteSecurityGroupInput{
+			ec2Mocks: func(m *mocksv2.MockEC2APIMockRecorder) {
+				m.DeleteSecurityGroup(gomock.Any(), &v2ec2.DeleteSecurityGroupInput{
 					GroupId: aws.String("sg-123456"),
 				})
 			},
@@ -662,20 +664,20 @@ func TestReconcileDelete(t *testing.T) {
 		{
 			name:         "eks cluster with skipped security groups clean-up func",
 			clusterScope: createManageScope(t, "", "load-balancer,target-group"),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -688,7 +690,7 @@ func TestReconcileDelete(t *testing.T) {
 							},
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -701,7 +703,7 @@ func TestReconcileDelete(t *testing.T) {
 							},
 							{
 								ResourceARN: aws.String("arn:aws:ec2:eu-west-2:1234567890:security-group/sg-123456"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -726,26 +728,26 @@ func TestReconcileDelete(t *testing.T) {
 					TargetGroupArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
 				})
 			},
-			ec2Mocks:  func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
 		},
 		{
 			name:         "eks cluster with skipped security and target groups clean-up funcs",
 			clusterScope: createManageScope(t, "", "load-balancer"),
-			rgAPIMocks: func(m *mocks.MockResourceGroupsTaggingAPIAPIMockRecorder) {
-				m.GetResourcesWithContext(gomock.Any(), &rgapi.GetResourcesInput{
-					TagFilters: []*rgapi.TagFilter{
+			rgAPIMocks: func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {
+				m.GetResources(gomock.Any(), &rgapiv2.GetResourcesInput{
+					TagFilters: []rgapit.TagFilter{
 						{
 							Key:    aws.String("kubernetes.io/cluster/eks-test-cluster"),
-							Values: []*string{aws.String("owned")},
+							Values: []string{"owned"},
 						},
 					},
-				}).DoAndReturn(func(awsCtx context.Context, input *rgapi.GetResourcesInput, opts ...request.Option) (*rgapi.GetResourcesOutput, error) {
-					return &rgapi.GetResourcesOutput{
-						ResourceTagMappingList: []*rgapi.ResourceTagMapping{
+				}).DoAndReturn(func(awsCtx context.Context, input *rgapiv2.GetResourcesInput, opts ...request.Option) (*rgapiv2.GetResourcesOutput, error) {
+					return &rgapiv2.GetResourcesOutput{
+						ResourceTagMappingList: []rgapit.ResourceTagMapping{
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -758,7 +760,7 @@ func TestReconcileDelete(t *testing.T) {
 							},
 							{
 								ResourceARN: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/aec24434cd2ce4630bd14a955413ee37"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -771,7 +773,7 @@ func TestReconcileDelete(t *testing.T) {
 							},
 							{
 								ResourceARN: aws.String("arn:aws:ec2:eu-west-2:1234567890:security-group/sg-123456"),
-								Tags: []*rgapi.Tag{
+								Tags: []rgapit.Tag{
 									{
 										Key:   aws.String("kubernetes.io/cluster/cluster1"),
 										Value: aws.String("owned"),
@@ -792,7 +794,7 @@ func TestReconcileDelete(t *testing.T) {
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
 			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
-			ec2Mocks:   func(m *mocks.MockEC2APIMockRecorder) {},
+			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
 	}
@@ -803,10 +805,10 @@ func TestReconcileDelete(t *testing.T) {
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
-			rgapiMock := mocks.NewMockResourceGroupsTaggingAPIAPI(mockCtrl)
+			rgapiMock := mocksv2.NewMockResourceGroupsTaggingAPIAPI(mockCtrl)
 			elbapiMock := mocks.NewMockELBAPI(mockCtrl)
 			elbv2Mock := mocks.NewMockELBV2API(mockCtrl)
-			ec2Mock := mocks.NewMockEC2API(mockCtrl)
+			ec2Mock := mocksv2.NewMockEC2API(mockCtrl)
 
 			tc.rgAPIMocks(rgapiMock.EXPECT())
 			tc.elbMocks(elbapiMock.EXPECT())
