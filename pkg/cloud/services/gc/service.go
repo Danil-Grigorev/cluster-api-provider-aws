@@ -21,7 +21,6 @@ import (
 	"context"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
@@ -30,7 +29,7 @@ import (
 // Service is used to perform operations against a tenant/workload/child cluster.
 type Service struct {
 	scope                 cloud.ClusterScoper
-	elbClient             elbiface.ELBAPI
+	elbClient             scope.ELBAPI
 	elbv2Client           scope.ELBV2API
 	resourceTaggingClient scope.ResourceGroupsTaggingAPIAPI
 	ec2Client             scope.EC2API
@@ -42,7 +41,7 @@ type Service struct {
 func NewService(clusterScope cloud.ClusterScoper, opts ...ServiceOption) *Service {
 	svc := &Service{
 		scope:                 clusterScope,
-		elbClient:             scope.NewELBClient(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
+		elbClient:             scope.NewELBClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
 		elbv2Client:           scope.NewELBV2ClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
 		resourceTaggingClient: scope.NewResourceTaggingClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
 		ec2Client:             scope.NewEC2ClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),

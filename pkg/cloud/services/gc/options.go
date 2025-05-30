@@ -17,7 +17,6 @@ limitations under the License.
 package gc
 
 import (
-	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
 )
 
@@ -25,7 +24,7 @@ import (
 type ServiceOption func(*Service)
 
 // withELBClient is an option for specifying a AWS ELB Client.
-func withELBClient(client elbiface.ELBAPI) ServiceOption {
+func withELBClient(client scope.ELBAPI) ServiceOption {
 	return func(s *Service) {
 		s.elbClient = client
 	}

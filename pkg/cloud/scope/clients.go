@@ -20,6 +20,7 @@ import (
 	"context"
 
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	elasticloadbalancing "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	elasticloadbalancingv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	resourcegroupstaggingapiv2 "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -84,6 +85,13 @@ type ELBV2API interface {
 type EC2API interface {
 	DeleteSecurityGroup(context.Context, *ec2v2.DeleteSecurityGroupInput, ...func(*ec2v2.Options)) (*ec2v2.DeleteSecurityGroupOutput, error)
 	ec2v2.DescribeSecurityGroupsAPIClient
+}
+
+// ELBAPI is a compatibility layer for the v2 elasticloadbalancing.Client interface.
+type ELBAPI interface {
+	DeleteLoadBalancer(ctx context.Context, params *elasticloadbalancing.DeleteLoadBalancerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DeleteLoadBalancerOutput, error)
+	DescribeLoadBalancers(ctx context.Context, params *elasticloadbalancing.DescribeLoadBalancersInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancersOutput, error)
+	DescribeTags(ctx context.Context, params *elasticloadbalancing.DescribeTagsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeTagsOutput, error)
 }
 
 // NewASGClient creates a new ASG API client for a given session.
@@ -274,7 +282,7 @@ func NewEC2ClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger lo
 }
 
 // NewELBV2ClientV2 creates a new ELBV2 API client for a given session using AWS SDK v2.
-func NewELBV2ClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger logger.Wrapper, target runtime.Object) *elasticloadbalancingv2.Client {
+func NewELBV2ClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger logger.Wrapper, target runtime.Object) ELBV2API {
 	cfg := session.SessionV2()
 	elbOpts := []func(*elasticloadbalancingv2.Options){
 		func(o *elasticloadbalancingv2.Options) {
@@ -284,6 +292,19 @@ func NewELBV2ClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger 
 		elasticloadbalancingv2.WithAPIOptions(awsmetricsv2.WithMiddlewares(scopeUser.ControllerName(), target), awsmetricsv2.WithCAPAUserAgentMiddleware()),
 	}
 	return elasticloadbalancingv2.NewFromConfig(cfg, elbOpts...)
+}
+
+// NewELBClientV2 creates a new ELB API client for a given session using AWS SDK v2.
+func NewELBClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger logger.Wrapper, target runtime.Object) ELBAPI {
+	cfg := session.SessionV2()
+	elbOpts := []func(*elasticloadbalancing.Options){
+		func(o *elasticloadbalancing.Options) {
+			o.Logger = logger.GetAWSLogger()
+			o.ClientLogMode = awslogs.GetAWSLogLevelV2(logger.GetLogger())
+		},
+		elasticloadbalancing.WithAPIOptions(awsmetricsv2.WithMiddlewares(scopeUser.ControllerName(), target), awsmetricsv2.WithCAPAUserAgentMiddleware()),
+	}
+	return elasticloadbalancing.NewFromConfig(cfg, elbOpts...)
 }
 
 func recordAWSPermissionsIssue(target runtime.Object) func(r *request.Request) {
