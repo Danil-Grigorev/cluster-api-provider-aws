@@ -18,7 +18,6 @@ package gc
 
 import (
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
-	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
 )
 
@@ -33,7 +32,7 @@ func withELBClient(client elbiface.ELBAPI) ServiceOption {
 }
 
 // withELBv2Client is an option for specifying a AWS ELBv2 Client.
-func withELBv2Client(client elbv2iface.ELBV2API) ServiceOption {
+func withELBv2Client(client scope.ELBV2API) ServiceOption {
 	return func(s *Service) {
 		s.elbv2Client = client
 	}

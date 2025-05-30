@@ -20,6 +20,7 @@ import (
 	"context"
 
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	elasticloadbalancingv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	resourcegroupstaggingapiv2 "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/aws"
@@ -65,6 +66,17 @@ import (
 // It is used to provide a consistent interface for the GetResources method.
 type ResourceGroupsTaggingAPIAPI interface {
 	resourcegroupstaggingapiv2.GetResourcesAPIClient
+}
+
+// ELBV2API is a compatibility layer for the v2 elasticloadbalancingv2.Client interface.
+type ELBV2API interface {
+	DescribeLoadBalancers(ctx context.Context, params *elasticloadbalancingv2.DescribeLoadBalancersInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancersOutput, error)
+	DescribeTargetGroups(ctx context.Context, params *elasticloadbalancingv2.DescribeTargetGroupsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetGroupsOutput, error)
+	DescribeListeners(ctx context.Context, params *elasticloadbalancingv2.DescribeListenersInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeListenersOutput, error)
+	DescribeTags(ctx context.Context, params *elasticloadbalancingv2.DescribeTagsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTagsOutput, error)
+	DeleteLoadBalancer(ctx context.Context, params *elasticloadbalancingv2.DeleteLoadBalancerInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteLoadBalancerOutput, error)
+	DeleteTargetGroup(ctx context.Context, params *elasticloadbalancingv2.DeleteTargetGroupInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteTargetGroupOutput, error)
+	DeleteListener(ctx context.Context, params *elasticloadbalancingv2.DeleteListenerInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteListenerOutput, error)
 }
 
 // EC2API is a compatibility layer for the v1 ec2iface.EC2API interface.
@@ -259,6 +271,19 @@ func NewEC2ClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger lo
 		ec2v2.WithAPIOptions(awsmetricsv2.WithMiddlewares(scopeUser.ControllerName(), target), awsmetricsv2.WithCAPAUserAgentMiddleware()),
 	}
 	return ec2v2.NewFromConfig(cfg, ec2Opts...)
+}
+
+// NewELBV2ClientV2 creates a new ELBV2 API client for a given session using AWS SDK v2.
+func NewELBV2ClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger logger.Wrapper, target runtime.Object) *elasticloadbalancingv2.Client {
+	cfg := session.SessionV2()
+	elbOpts := []func(*elasticloadbalancingv2.Options){
+		func(o *elasticloadbalancingv2.Options) {
+			o.Logger = logger.GetAWSLogger()
+			o.ClientLogMode = awslogs.GetAWSLogLevelV2(logger.GetLogger())
+		},
+		elasticloadbalancingv2.WithAPIOptions(awsmetricsv2.WithMiddlewares(scopeUser.ControllerName(), target), awsmetricsv2.WithCAPAUserAgentMiddleware()),
+	}
+	return elasticloadbalancingv2.NewFromConfig(cfg, elbOpts...)
 }
 
 func recordAWSPermissionsIssue(target runtime.Object) func(r *request.Request) {

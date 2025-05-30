@@ -22,7 +22,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
-	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
@@ -32,7 +31,7 @@ import (
 type Service struct {
 	scope                 cloud.ClusterScoper
 	elbClient             elbiface.ELBAPI
-	elbv2Client           elbv2iface.ELBV2API
+	elbv2Client           scope.ELBV2API
 	resourceTaggingClient scope.ResourceGroupsTaggingAPIAPI
 	ec2Client             scope.EC2API
 	cleanupFuncs          ResourceCleanupFuncs
@@ -44,7 +43,7 @@ func NewService(clusterScope cloud.ClusterScoper, opts ...ServiceOption) *Servic
 	svc := &Service{
 		scope:                 clusterScope,
 		elbClient:             scope.NewELBClient(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
-		elbv2Client:           scope.NewELBv2Client(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
+		elbv2Client:           scope.NewELBV2ClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
 		resourceTaggingClient: scope.NewResourceTaggingClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
 		ec2Client:             scope.NewEC2ClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
 		cleanupFuncs:          ResourceCleanupFuncs{},

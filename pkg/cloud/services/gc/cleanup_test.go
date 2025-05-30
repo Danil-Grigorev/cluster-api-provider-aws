@@ -21,12 +21,12 @@ import (
 	"testing"
 
 	v2ec2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	v2elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	rgapiv2 "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	rgapit "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/elb"
-	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -49,7 +49,7 @@ func TestReconcileDelete(t *testing.T) {
 		name         string
 		clusterScope cloud.ClusterScoper
 		elbMocks     func(m *mocks.MockELBAPIMockRecorder)
-		elbv2Mocks   func(m *mocks.MockELBV2APIMockRecorder)
+		elbv2Mocks   func(m *mocksv2.MockELBV2APIMockRecorder)
 		rgAPIMocks   func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder)
 		ec2Mocks     func(m *mocksv2.MockEC2APIMockRecorder)
 		expectErr    bool
@@ -59,7 +59,7 @@ func TestReconcileDelete(t *testing.T) {
 			clusterScope: createManageScope(t, "false", ""),
 			rgAPIMocks:   func(m *mocksv2.MockResourceGroupsTaggingAPIAPIMockRecorder) {},
 			elbMocks:     func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks:   func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks:   func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:     func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:    false,
 		},
@@ -81,7 +81,7 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -103,7 +103,7 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -125,7 +125,7 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -157,7 +157,7 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -189,7 +189,7 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -229,7 +229,7 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerName: aws.String("aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -269,7 +269,7 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerName: aws.String("aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -305,10 +305,10 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks: func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {
-				m.DeleteLoadBalancerWithContext(gomock.Any(), &elbv2.DeleteLoadBalancerInput{
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {
+				m.DeleteLoadBalancer(gomock.Any(), &v2elbv2.DeleteLoadBalancerInput{
 					LoadBalancerArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/net/aec24434cd2ce4630bd14a955413ee37"),
-				}).Return(&elbv2.DeleteLoadBalancerOutput{}, nil)
+				}).Return(&v2elbv2.DeleteLoadBalancerOutput{}, nil)
 			},
 			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
@@ -345,10 +345,10 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks: func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {
-				m.DeleteLoadBalancerWithContext(gomock.Any(), &elbv2.DeleteLoadBalancerInput{
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {
+				m.DeleteLoadBalancer(gomock.Any(), &v2elbv2.DeleteLoadBalancerInput{
 					LoadBalancerArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/net/aec24434cd2ce4630bd14a955413ee37"),
-				}).Return(&elbv2.DeleteLoadBalancerOutput{}, nil)
+				}).Return(&v2elbv2.DeleteLoadBalancerOutput{}, nil)
 			},
 			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
@@ -385,10 +385,10 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks: func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {
-				m.DeleteLoadBalancerWithContext(gomock.Any(), &elbv2.DeleteLoadBalancerInput{
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {
+				m.DeleteLoadBalancer(gomock.Any(), &v2elbv2.DeleteLoadBalancerInput{
 					LoadBalancerArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/app/aec24434cd2ce4630bd14a955413ee37"),
-				}).Return(&elbv2.DeleteLoadBalancerOutput{}, nil)
+				}).Return(&v2elbv2.DeleteLoadBalancerOutput{}, nil)
 			},
 			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
@@ -425,10 +425,10 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks: func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {
-				m.DeleteLoadBalancerWithContext(gomock.Any(), &elbv2.DeleteLoadBalancerInput{
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {
+				m.DeleteLoadBalancer(gomock.Any(), &v2elbv2.DeleteLoadBalancerInput{
 					LoadBalancerArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:loadbalancer/app/aec24434cd2ce4630bd14a955413ee37"),
-				}).Return(&elbv2.DeleteLoadBalancerOutput{}, nil)
+				}).Return(&v2elbv2.DeleteLoadBalancerOutput{}, nil)
 			},
 			ec2Mocks:  func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr: false,
@@ -495,8 +495,8 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerName: aws.String("aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {
-				m.DeleteTargetGroupWithContext(gomock.Any(), &elbv2.DeleteTargetGroupInput{
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {
+				m.DeleteTargetGroup(gomock.Any(), &v2elbv2.DeleteTargetGroupInput{
 					TargetGroupArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
 				})
 			},
@@ -543,7 +543,7 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -583,7 +583,7 @@ func TestReconcileDelete(t *testing.T) {
 				})
 			},
 			elbMocks:   func(m *mocks.MockELBAPIMockRecorder) {},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -649,8 +649,8 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerName: aws.String("aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {
-				m.DeleteTargetGroupWithContext(gomock.Any(), &elbv2.DeleteTargetGroupInput{
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {
+				m.DeleteTargetGroup(gomock.Any(), &v2elbv2.DeleteTargetGroupInput{
 					TargetGroupArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
 				})
 			},
@@ -723,8 +723,8 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerName: aws.String("aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {
-				m.DeleteTargetGroupWithContext(gomock.Any(), &elbv2.DeleteTargetGroupInput{
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {
+				m.DeleteTargetGroup(gomock.Any(), &v2elbv2.DeleteTargetGroupInput{
 					TargetGroupArn: aws.String("arn:aws:elasticloadbalancing:eu-west-2:1234567890:targetgroup/k8s-default-podinfo-2c868b281a/e979fe9bd6825433"),
 				})
 			},
@@ -793,7 +793,7 @@ func TestReconcileDelete(t *testing.T) {
 					LoadBalancerName: aws.String("aec24434cd2ce4630bd14a955413ee37"),
 				}).Return(&elb.DeleteLoadBalancerOutput{}, nil)
 			},
-			elbv2Mocks: func(m *mocks.MockELBV2APIMockRecorder) {},
+			elbv2Mocks: func(m *mocksv2.MockELBV2APIMockRecorder) {},
 			ec2Mocks:   func(m *mocksv2.MockEC2APIMockRecorder) {},
 			expectErr:  false,
 		},
@@ -807,7 +807,7 @@ func TestReconcileDelete(t *testing.T) {
 
 			rgapiMock := mocksv2.NewMockResourceGroupsTaggingAPIAPI(mockCtrl)
 			elbapiMock := mocks.NewMockELBAPI(mockCtrl)
-			elbv2Mock := mocks.NewMockELBV2API(mockCtrl)
+			elbv2Mock := mocksv2.NewMockELBV2API(mockCtrl)
 			ec2Mock := mocksv2.NewMockEC2API(mockCtrl)
 
 			tc.rgAPIMocks(rgapiMock.EXPECT())
