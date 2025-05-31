@@ -28,8 +28,8 @@ import (
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	expinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2"
-	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/services/instancestate/mock_sqsiface"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/test/helpers"
+	"sigs.k8s.io/cluster-api-provider-aws/v2/test/mocks/v2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 )
@@ -40,7 +40,7 @@ import (
 var (
 	k8sClient               client.Client
 	instanceStateReconciler *AwsInstanceStateReconciler
-	sqsSvs                  *mock_sqsiface.MockSQSAPI
+	sqsSvs                  *mocks.MockSQSAPI
 	testEnv                 *helpers.TestEnvironment
 	ctx                     = ctrl.SetupSignalHandler()
 )

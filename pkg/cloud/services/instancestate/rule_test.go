@@ -17,20 +17,22 @@ limitations under the License.
 package instancestate
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/eventbridge"
-	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/services/instancestate/mock_eventbridgeiface"
-	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/services/instancestate/mock_sqsiface"
+	"sigs.k8s.io/cluster-api-provider-aws/v2/test/mocks/v2"
 )
 
 func TestReconcileRules(t *testing.T) {
@@ -42,7 +44,7 @@ func TestReconcileRules(t *testing.T) {
 		name                        string
 		eventBridgeExpect           func(m *mock_eventbridgeiface.MockEventBridgeAPIMockRecorder)
 		postCreateEventBridgeExpect func(m *mock_eventbridgeiface.MockEventBridgeAPIMockRecorder)
-		sqsExpect                   func(m *mock_sqsiface.MockSQSAPIMockRecorder)
+		sqsExpect                   func(m *mocks.MockSQSAPIMockRecorder)
 		expectErr                   bool
 	}{
 		{
@@ -88,17 +90,17 @@ func TestReconcileRules(t *testing.T) {
 					}},
 				}))
 			},
-			sqsExpect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
-				m.GetQueueUrl(gomock.Eq(&sqs.GetQueueUrlInput{
+			sqsExpect: func(m *mocks.MockSQSAPIMockRecorder) {
+				m.GetQueueUrl(gomock.Any(), gomock.Eq(&sqs.GetQueueUrlInput{
 					QueueName: aws.String("test-cluster-queue"),
 				})).Return(&sqs.GetQueueUrlOutput{QueueUrl: aws.String("test-cluster-queue-url")}, nil)
 				attrs := make(map[string]string)
-				attrs[sqs.QueueAttributeNameQueueArn] = "test-cluster-queue-arn"
-				m.GetQueueAttributes(gomock.Eq(&sqs.GetQueueAttributesInput{
-					AttributeNames: aws.StringSlice([]string{sqs.QueueAttributeNameQueueArn, sqs.QueueAttributeNamePolicy}),
+				attrs[string(sqstypes.QueueAttributeNameQueueArn)] = "test-cluster-queue-arn"
+				m.GetQueueAttributes(gomock.Any(), gomock.Eq(&sqs.GetQueueAttributesInput{
+					AttributeNames: []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameQueueArn, sqstypes.QueueAttributeNamePolicy},
 					QueueUrl:       aws.String("test-cluster-queue-url"),
-				})).Return(&sqs.GetQueueAttributesOutput{Attributes: aws.StringMap(attrs)}, nil)
-				m.SetQueueAttributes(gomock.AssignableToTypeOf(&sqs.SetQueueAttributesInput{})).Return(nil, nil)
+				}), gomock.Any()).Return(&sqs.GetQueueAttributesOutput{Attributes: attrs}, nil)
+				m.SetQueueAttributes(gomock.Any(), gomock.AssignableToTypeOf(&sqs.SetQueueAttributesInput{}), gomock.Any()).Return(nil, nil)
 			},
 			expectErr: false,
 		},
@@ -116,12 +118,12 @@ func TestReconcileRules(t *testing.T) {
 				}, nil)
 			},
 			postCreateEventBridgeExpect: func(m *mock_eventbridgeiface.MockEventBridgeAPIMockRecorder) {},
-			sqsExpect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
-				m.GetQueueUrl(gomock.AssignableToTypeOf(&sqs.GetQueueUrlInput{})).Return(&sqs.GetQueueUrlOutput{QueueUrl: aws.String("test-cluster-queue-url")}, nil)
+			sqsExpect: func(m *mocks.MockSQSAPIMockRecorder) {
+				m.GetQueueUrl(gomock.Any(), gomock.AssignableToTypeOf(&sqs.GetQueueUrlInput{}), gomock.Any()).Return(&sqs.GetQueueUrlOutput{QueueUrl: aws.String("test-cluster-queue-url")}, nil)
 				attrs := make(map[string]string)
-				attrs[sqs.QueueAttributeNameQueueArn] = "test-cluster-queue-arn"
-				attrs[sqs.QueueAttributeNamePolicy] = "some policy"
-				m.GetQueueAttributes(gomock.AssignableToTypeOf(&sqs.GetQueueAttributesInput{})).Return(&sqs.GetQueueAttributesOutput{Attributes: aws.StringMap(attrs)}, nil)
+				attrs[string(sqstypes.QueueAttributeNameQueueArn)] = "test-cluster-queue-arn"
+				attrs[string(sqstypes.QueueAttributeNamePolicy)] = "some policy"
+				m.GetQueueAttributes(gomock.Any(), gomock.AssignableToTypeOf(&sqs.GetQueueAttributesInput{}), gomock.Any()).Return(&sqs.GetQueueAttributesOutput{Attributes: attrs}, nil)
 			},
 		},
 		{
@@ -132,7 +134,7 @@ func TestReconcileRules(t *testing.T) {
 				})).Return(nil, errors.New("some error"))
 			},
 			postCreateEventBridgeExpect: func(m *mock_eventbridgeiface.MockEventBridgeAPIMockRecorder) {},
-			sqsExpect:                   func(m *mock_sqsiface.MockSQSAPIMockRecorder) {},
+			sqsExpect:                   func(m *mocks.MockSQSAPIMockRecorder) {},
 			expectErr:                   true,
 		},
 	}
@@ -141,7 +143,8 @@ func TestReconcileRules(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			eventbridgeMock := mock_eventbridgeiface.NewMockEventBridgeAPI(mockCtrl)
-			sqsMock := mock_sqsiface.NewMockSQSAPI(mockCtrl)
+			sqsMock := mocks.NewMockSQSAPI(mockCtrl)
+			ctx := context.Background()
 			clusterScope, err := setupCluster("test-cluster")
 			g.Expect(err).To(Not(HaveOccurred()))
 			tc.sqsExpect(sqsMock.EXPECT())
@@ -152,7 +155,7 @@ func TestReconcileRules(t *testing.T) {
 			s.EventBridgeClient = eventbridgeMock
 			s.SQSClient = sqsMock
 
-			err = s.reconcileRules()
+			err = s.reconcileRules(ctx)
 			if tc.expectErr {
 				g.Expect(err).NotTo(BeNil())
 			} else {
@@ -176,7 +179,7 @@ func TestDeleteRules(t *testing.T) {
 			eventBridgeExpect: func(m *mock_eventbridgeiface.MockEventBridgeAPIMockRecorder) {
 				m.RemoveTargets(gomock.Eq(&eventbridge.RemoveTargetsInput{
 					Rule: aws.String("test-cluster-ec2-rule"),
-					Ids:  aws.StringSlice([]string{"test-cluster-queue"}),
+					Ids:  []*string{aws.String("test-cluster-queue")},
 				})).Return(nil, nil)
 				m.DeleteRule(gomock.Eq(&eventbridge.DeleteRuleInput{
 					Name: aws.String("test-cluster-ec2-rule"),

@@ -24,6 +24,7 @@ import (
 	elasticloadbalancingv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	resourcegroupstaggingapiv2 "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	sqsv2 "github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -45,8 +46,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi/resourcegroupstaggingapiiface"
 	"github.com/aws/aws-sdk-go/service/secretsmanager"
 	"github.com/aws/aws-sdk-go/service/secretsmanager/secretsmanageriface"
-	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
 	"github.com/aws/aws-sdk-go/service/sts"
@@ -85,6 +84,17 @@ type ELBV2API interface {
 type EC2API interface {
 	DeleteSecurityGroup(context.Context, *ec2v2.DeleteSecurityGroupInput, ...func(*ec2v2.Options)) (*ec2v2.DeleteSecurityGroupOutput, error)
 	ec2v2.DescribeSecurityGroupsAPIClient
+}
+
+// SQSAPI is a compatibility layer for the v2 sqs.Client interface.
+type SQSAPI interface {
+	GetQueueUrl(ctx context.Context, params *sqsv2.GetQueueUrlInput, optFns ...func(*sqsv2.Options)) (*sqsv2.GetQueueUrlOutput, error)
+	ReceiveMessage(ctx context.Context, params *sqsv2.ReceiveMessageInput, optFns ...func(*sqsv2.Options)) (*sqsv2.ReceiveMessageOutput, error)
+	DeleteMessage(ctx context.Context, params *sqsv2.DeleteMessageInput, optFns ...func(*sqsv2.Options)) (*sqsv2.DeleteMessageOutput, error)
+	CreateQueue(ctx context.Context, params *sqsv2.CreateQueueInput, optFns ...func(*sqsv2.Options)) (*sqsv2.CreateQueueOutput, error)
+	DeleteQueue(ctx context.Context, params *sqsv2.DeleteQueueInput, optFns ...func(*sqsv2.Options)) (*sqsv2.DeleteQueueOutput, error)
+	SetQueueAttributes(ctx context.Context, params *sqsv2.SetQueueAttributesInput, optFns ...func(*sqsv2.Options)) (*sqsv2.SetQueueAttributesOutput, error)
+	GetQueueAttributes(ctx context.Context, params *sqsv2.GetQueueAttributesInput, optFns ...func(*sqsv2.Options)) (*sqsv2.GetQueueAttributesOutput, error)
 }
 
 // ELBAPI is a compatibility layer for the v2 elasticloadbalancing.Client interface.
@@ -154,25 +164,6 @@ func NewEventBridgeClient(scopeUser cloud.ScopeUsage, session cloud.Session, tar
 	return eventBridgeClient
 }
 
-// NewSQSClient creates a new SQS API client for a given session.
-func NewSQSClient(scopeUser cloud.ScopeUsage, session cloud.Session, target runtime.Object) sqsiface.SQSAPI {
-	SQSClient := sqs.New(session.Session())
-	SQSClient.Handlers.Build.PushFrontNamed(getUserAgentHandler())
-	SQSClient.Handlers.CompleteAttempt.PushFront(awsmetrics.CaptureRequestMetrics(scopeUser.ControllerName()))
-	SQSClient.Handlers.Complete.PushBack(recordAWSPermissionsIssue(target))
-
-	return SQSClient
-}
-
-// NewGlobalSQSClient for creating a new SQS API client that isn't tied to a cluster.
-func NewGlobalSQSClient(scopeUser cloud.ScopeUsage, session cloud.Session) sqsiface.SQSAPI {
-	SQSClient := sqs.New(session.Session())
-	SQSClient.Handlers.Build.PushFrontNamed(getUserAgentHandler())
-	SQSClient.Handlers.CompleteAttempt.PushFront(awsmetrics.CaptureRequestMetrics(scopeUser.ControllerName()))
-
-	return SQSClient
-}
-
 // NewResourgeTaggingClient creates a new Resource Tagging API client for a given session.
 func NewResourgeTaggingClient(scopeUser cloud.ScopeUsage, session cloud.Session, logger logger.Wrapper, target runtime.Object) resourcegroupstaggingapiiface.ResourceGroupsTaggingAPIAPI {
 	resourceTagging := resourcegroupstaggingapi.New(session.Session(), aws.NewConfig().WithLogLevel(awslogs.GetAWSLogLevel(logger.GetLogger())).WithLogger(awslogs.NewWrapLogr(logger.GetLogger())))
@@ -235,6 +226,19 @@ func NewSSMClient(scopeUser cloud.ScopeUsage, session cloud.Session, logger logg
 	ssmClient.Handlers.Complete.PushBack(recordAWSPermissionsIssue(target))
 
 	return ssmClient
+}
+
+// NewSQSClientV2 creates a new SQS API client for a given session using AWS SDK v2.
+func NewSQSClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger logger.Wrapper, target runtime.Object) SQSAPI {
+	cfg := session.SessionV2()
+	sqsOpts := []func(*sqsv2.Options){
+		func(o *sqsv2.Options) {
+			o.Logger = logger.GetAWSLogger()
+			o.ClientLogMode = awslogs.GetAWSLogLevelV2(logger.GetLogger())
+		},
+		sqsv2.WithAPIOptions(awsmetricsv2.WithMiddlewares(scopeUser.ControllerName(), target), awsmetricsv2.WithCAPAUserAgentMiddleware()),
+	}
+	return sqsv2.NewFromConfig(cfg, sqsOpts...)
 }
 
 // NewResourceTaggingClientV2 creates a new Resource Tagging API client for a given session using AWS SDK v2.

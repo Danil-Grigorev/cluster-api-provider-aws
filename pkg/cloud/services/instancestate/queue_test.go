@@ -18,17 +18,18 @@ package instancestate
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 
-	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/services/instancestate/mock_sqsiface"
+	"sigs.k8s.io/cluster-api-provider-aws/v2/test/mocks/v2"
 )
 
 func TestReconcileSQSQueue(t *testing.T) {
@@ -37,41 +38,41 @@ func TestReconcileSQSQueue(t *testing.T) {
 
 	testCases := []struct {
 		name      string
-		expect    func(m *mock_sqsiface.MockSQSAPIMockRecorder)
+		expect    func(m *mocks.MockSQSAPIMockRecorder)
 		expectErr bool
 	}{
 		{
 			name: "successfully creates an SQS queue",
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
 				attrs := make(map[string]string)
-				attrs[sqs.QueueAttributeNameReceiveMessageWaitTimeSeconds] = "20"
-				m.CreateQueue(&sqs.CreateQueueInput{
+				attrs[string(types.QueueAttributeNameReceiveMessageWaitTimeSeconds)] = "20"
+				m.CreateQueue(gomock.Any(), &sqs.CreateQueueInput{
 					QueueName:  aws.String("test-cluster-queue"),
-					Attributes: aws.StringMap(attrs),
+					Attributes: attrs,
 				}).Return(nil, nil)
 			},
 			expectErr: false,
 		},
 		{
 			name: "does not error if queue already exists",
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
 				attrs := make(map[string]string)
-				attrs[sqs.QueueAttributeNameReceiveMessageWaitTimeSeconds] = "20"
-				m.CreateQueue(&sqs.CreateQueueInput{
+				attrs[string(types.QueueAttributeNameReceiveMessageWaitTimeSeconds)] = "20"
+				m.CreateQueue(gomock.Any(), &sqs.CreateQueueInput{
 					QueueName:  aws.String("test-cluster-queue"),
-					Attributes: aws.StringMap(attrs),
-				}).Return(nil, awserr.New(sqs.ErrCodeQueueNameExists, "", nil))
+					Attributes: attrs,
+				}).Return(nil, &types.QueueNameExists{})
 			},
 			expectErr: false,
 		},
 		{
 			name: "errors when unexpected error occurs",
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
 				attrs := make(map[string]string)
-				attrs[sqs.QueueAttributeNameReceiveMessageWaitTimeSeconds] = "20"
-				m.CreateQueue(&sqs.CreateQueueInput{
+				attrs[string(types.QueueAttributeNameReceiveMessageWaitTimeSeconds)] = "20"
+				m.CreateQueue(gomock.Any(), &sqs.CreateQueueInput{
 					QueueName:  aws.String("test-cluster-queue"),
-					Attributes: aws.StringMap(attrs),
+					Attributes: attrs,
 				}).Return(nil, errors.New("some error"))
 			},
 			expectErr: true,
@@ -81,7 +82,8 @@ func TestReconcileSQSQueue(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			sqsMock := mock_sqsiface.NewMockSQSAPI(mockCtrl)
+			sqsMock := mocks.NewMockSQSAPI(mockCtrl)
+			ctx := context.Background()
 			clusterScope, err := setupCluster("test-cluster")
 			g.Expect(err).To(Not(HaveOccurred()))
 
@@ -89,7 +91,7 @@ func TestReconcileSQSQueue(t *testing.T) {
 			s := NewService(clusterScope)
 			s.SQSClient = sqsMock
 
-			err = s.reconcileSQSQueue()
+			err = s.reconcileSQSQueue(ctx)
 
 			if tc.expectErr {
 				g.Expect(err).NotTo(BeNil())
@@ -106,16 +108,16 @@ func TestDeleteSQSQueue(t *testing.T) {
 
 	testCases := []struct {
 		name      string
-		expect    func(m *mock_sqsiface.MockSQSAPIMockRecorder)
+		expect    func(m *mocks.MockSQSAPIMockRecorder)
 		expectErr bool
 	}{
 		{
 			name: "deletes queue successfully",
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
-				m.GetQueueUrl(&sqs.GetQueueUrlInput{
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
+				m.GetQueueUrl(gomock.Any(), &sqs.GetQueueUrlInput{
 					QueueName: aws.String("test-cluster-queue"),
 				}).Return(&sqs.GetQueueUrlOutput{QueueUrl: aws.String("test-cluster-queue-url")}, nil)
-				m.DeleteQueue(&sqs.DeleteQueueInput{
+				m.DeleteQueue(gomock.Any(), &sqs.DeleteQueueInput{
 					QueueUrl: aws.String("test-cluster-queue-url"),
 				}).Return(nil, nil)
 			},
@@ -123,17 +125,17 @@ func TestDeleteSQSQueue(t *testing.T) {
 		},
 		{
 			name: "doesn't return error if queue not found when calling GetQueueUrl",
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
-				m.GetQueueUrl(&sqs.GetQueueUrlInput{
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
+				m.GetQueueUrl(gomock.Any(), &sqs.GetQueueUrlInput{
 					QueueName: aws.String("test-cluster-queue"),
-				}).Return(nil, awserr.New(sqs.ErrCodeQueueDoesNotExist, "", nil))
+				}).Return(nil, &types.QueueDoesNotExist{})
 			},
 			expectErr: false,
 		},
 		{
 			name: "returns error if Describe Queue failed for unexpected reason",
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
-				m.GetQueueUrl(&sqs.GetQueueUrlInput{
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
+				m.GetQueueUrl(gomock.Any(), &sqs.GetQueueUrlInput{
 					QueueName: aws.String("test-cluster-queue"),
 				}).Return(nil, errors.New("some error"))
 			},
@@ -141,23 +143,23 @@ func TestDeleteSQSQueue(t *testing.T) {
 		},
 		{
 			name: "doesn't return error if queue not found when attempting delete",
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
-				m.GetQueueUrl(&sqs.GetQueueUrlInput{
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
+				m.GetQueueUrl(gomock.Any(), &sqs.GetQueueUrlInput{
 					QueueName: aws.String("test-cluster-queue"),
 				}).Return(&sqs.GetQueueUrlOutput{QueueUrl: aws.String("test-cluster-queue-url")}, nil)
-				m.DeleteQueue(&sqs.DeleteQueueInput{
+				m.DeleteQueue(gomock.Any(), &sqs.DeleteQueueInput{
 					QueueUrl: aws.String("test-cluster-queue-url"),
-				}).Return(nil, awserr.New(sqs.ErrCodeQueueDoesNotExist, "", nil))
+				}).Return(nil, &types.QueueDoesNotExist{})
 			},
 			expectErr: false,
 		},
 		{
 			name: "returns error if delete queue failed for unexpected reason",
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
-				m.GetQueueUrl(&sqs.GetQueueUrlInput{
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
+				m.GetQueueUrl(gomock.Any(), &sqs.GetQueueUrlInput{
 					QueueName: aws.String("test-cluster-queue"),
 				}).Return(&sqs.GetQueueUrlOutput{QueueUrl: aws.String("test-cluster-queue-url")}, nil)
-				m.DeleteQueue(&sqs.DeleteQueueInput{
+				m.DeleteQueue(gomock.Any(), &sqs.DeleteQueueInput{
 					QueueUrl: aws.String("test-cluster-queue-url"),
 				}).Return(nil, errors.New("some error"))
 			},
@@ -168,7 +170,8 @@ func TestDeleteSQSQueue(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			sqsMock := mock_sqsiface.NewMockSQSAPI(mockCtrl)
+			sqsMock := mocks.NewMockSQSAPI(mockCtrl)
+			ctx := context.Background()
 			clusterScope, err := setupCluster("test-cluster")
 			g.Expect(err).To(Not(HaveOccurred()))
 
@@ -176,7 +179,7 @@ func TestDeleteSQSQueue(t *testing.T) {
 			s := NewService(clusterScope)
 			s.SQSClient = sqsMock
 
-			err = s.deleteSQSQueue()
+			err = s.deleteSQSQueue(ctx)
 
 			if tc.expectErr {
 				g.Expect(err).NotTo(BeNil())
@@ -194,7 +197,7 @@ func TestCreatePolicyForRule(t *testing.T) {
 	testCases := []struct {
 		name      string
 		input     *createPolicyForRuleInput
-		expect    func(m *mock_sqsiface.MockSQSAPIMockRecorder)
+		expect    func(m *mocks.MockSQSAPIMockRecorder)
 		expectErr bool
 	}{
 		{
@@ -204,14 +207,14 @@ func TestCreatePolicyForRule(t *testing.T) {
 				QueueURL: "test-cluster-queue-url",
 				RuleArn:  "test-cluster-rule-arn",
 			},
-			expect: func(m *mock_sqsiface.MockSQSAPIMockRecorder) {
+			expect: func(m *mocks.MockSQSAPIMockRecorder) {
 				buffer := new(bytes.Buffer)
 				_ = json.Compact(buffer, []byte(expectedPolicyJSON))
 				attrs := make(map[string]string)
-				attrs[sqs.QueueAttributeNamePolicy] = buffer.String()
-				m.SetQueueAttributes(&sqs.SetQueueAttributesInput{
+				attrs[string(types.QueueAttributeNamePolicy)] = buffer.String()
+				m.SetQueueAttributes(gomock.Any(), &sqs.SetQueueAttributesInput{
 					QueueUrl:   aws.String("test-cluster-queue-url"),
-					Attributes: aws.StringMap(attrs),
+					Attributes: attrs,
 				}).Return(nil, nil)
 			},
 			expectErr: false,
@@ -221,7 +224,8 @@ func TestCreatePolicyForRule(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			sqsMock := mock_sqsiface.NewMockSQSAPI(mockCtrl)
+			sqsMock := mocks.NewMockSQSAPI(mockCtrl)
+			ctx := context.Background()
 			clusterScope, err := setupCluster("test-cluster")
 			g.Expect(err).To(Not(HaveOccurred()))
 
@@ -229,7 +233,7 @@ func TestCreatePolicyForRule(t *testing.T) {
 			s := NewService(clusterScope)
 			s.SQSClient = sqsMock
 
-			err = s.createPolicyForRule(tc.input)
+			err = s.createPolicyForRule(ctx, tc.input)
 
 			if tc.expectErr {
 				g.Expect(err).NotTo(BeNil())

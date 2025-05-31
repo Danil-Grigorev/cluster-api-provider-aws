@@ -17,13 +17,15 @@ limitations under the License.
 package instancestate
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/eventbridge"
-	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/pkg/errors"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
@@ -33,7 +35,7 @@ import (
 const Ec2StateChangeNotification = "EC2 Instance State-change Notification"
 
 // reconcileRules creates rules and attaches the queue as a target.
-func (s Service) reconcileRules() error {
+func (s Service) reconcileRules(ctx context.Context) error {
 	var ruleNotFound bool
 	ruleResp, err := s.EventBridgeClient.DescribeRule(&eventbridge.DescribeRuleInput{
 		Name: aws.String(s.getEC2RuleName()),
@@ -61,15 +63,15 @@ func (s Service) reconcileRules() error {
 		}
 	}
 
-	queueURLResp, err := s.SQSClient.GetQueueUrl(&sqs.GetQueueUrlInput{
+	queueURLResp, err := s.SQSClient.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{
 		QueueName: aws.String(GenerateQueueName(s.scope.Name())),
 	})
 
 	if err != nil {
 		return errors.Wrap(err, "unable to get queue URL")
 	}
-	queueAttrs, err := s.SQSClient.GetQueueAttributes(&sqs.GetQueueAttributesInput{
-		AttributeNames: aws.StringSlice([]string{sqs.QueueAttributeNameQueueArn, sqs.QueueAttributeNamePolicy}),
+	queueAttrs, err := s.SQSClient.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameQueueArn, types.QueueAttributeNamePolicy},
 		QueueUrl:       queueURLResp.QueueUrl,
 	})
 
@@ -87,8 +89,11 @@ func (s Service) reconcileRules() error {
 	targetFound := false
 	for _, target := range targetsResp.Targets {
 		// check if queue is already added as a target
-		if *target.Id == GenerateQueueName(s.scope.Name()) && *target.Arn == *queueAttrs.Attributes[sqs.QueueAttributeNameQueueArn] {
-			targetFound = true
+		if *target.Id == GenerateQueueName(s.scope.Name()) {
+			if arn, ok := queueAttrs.Attributes["QueueArn"]; ok && *target.Arn == arn {
+				targetFound = true
+				break
+			}
 		}
 	}
 
@@ -96,7 +101,7 @@ func (s Service) reconcileRules() error {
 		_, err = s.EventBridgeClient.PutTargets(&eventbridge.PutTargetsInput{
 			Rule: ruleResp.Name,
 			Targets: []*eventbridge.Target{{
-				Arn: queueAttrs.Attributes[sqs.QueueAttributeNameQueueArn],
+				Arn: aws.String(queueAttrs.Attributes["QueueArn"]),
 				Id:  aws.String(GenerateQueueName(s.scope.Name())),
 			}},
 		})
@@ -106,10 +111,10 @@ func (s Service) reconcileRules() error {
 		}
 	}
 
-	if queueAttrs.Attributes[sqs.QueueAttributeNamePolicy] == nil {
+	if policy, ok := queueAttrs.Attributes["Policy"]; !ok || policy == "" {
 		// add a policy for the rule so the rule is authorized to emit messages to the queue
-		err = s.createPolicyForRule(&createPolicyForRuleInput{
-			QueueArn: *queueAttrs.Attributes[sqs.QueueAttributeNameQueueArn],
+		err = s.createPolicyForRule(ctx, &createPolicyForRuleInput{
+			QueueArn: queueAttrs.Attributes["QueueArn"],
 			QueueURL: *queueURLResp.QueueUrl,
 			RuleArn:  *ruleResp.Arn,
 		})
