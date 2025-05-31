@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -232,7 +233,7 @@ func (r *AwsInstanceStateReconciler) getQueueURL(ctx context.Context, cluster *i
 
 func queueNotFoundError(err error) bool {
 	var nf *sqstypes.QueueDoesNotExist
-	return errors.As(err, &nf)
+	return errors.As(err, &nf) && strings.Contains(err.Error(), nf.ErrorCode())
 }
 
 type queueParams struct {

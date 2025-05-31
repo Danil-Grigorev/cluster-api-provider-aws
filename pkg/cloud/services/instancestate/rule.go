@@ -22,10 +22,10 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	eventbridgetypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/eventbridge"
 	"github.com/pkg/errors"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
@@ -37,7 +37,7 @@ const Ec2StateChangeNotification = "EC2 Instance State-change Notification"
 // reconcileRules creates rules and attaches the queue as a target.
 func (s Service) reconcileRules(ctx context.Context) error {
 	var ruleNotFound bool
-	ruleResp, err := s.EventBridgeClient.DescribeRule(&eventbridge.DescribeRuleInput{
+	ruleResp, err := s.EventBridgeClient.DescribeRule(ctx, &eventbridge.DescribeRuleInput{
 		Name: aws.String(s.getEC2RuleName()),
 	})
 	if err != nil {
@@ -49,12 +49,12 @@ func (s Service) reconcileRules(ctx context.Context) error {
 	}
 
 	if ruleNotFound {
-		err = s.createRule()
+		err = s.createRule(ctx)
 		if err != nil {
 			return errors.Wrap(err, "unable to create rule")
 		}
 		// fetch newly created rule
-		ruleResp, err = s.EventBridgeClient.DescribeRule(&eventbridge.DescribeRuleInput{
+		ruleResp, err = s.EventBridgeClient.DescribeRule(ctx, &eventbridge.DescribeRuleInput{
 			Name: aws.String(s.getEC2RuleName()),
 		})
 
@@ -79,7 +79,7 @@ func (s Service) reconcileRules(ctx context.Context) error {
 		return errors.Wrap(err, "unable to get queue attributes")
 	}
 
-	targetsResp, err := s.EventBridgeClient.ListTargetsByRule(&eventbridge.ListTargetsByRuleInput{
+	targetsResp, err := s.EventBridgeClient.ListTargetsByRule(ctx, &eventbridge.ListTargetsByRuleInput{
 		Rule: aws.String(s.getEC2RuleName()),
 	})
 	if err != nil {
@@ -98,9 +98,9 @@ func (s Service) reconcileRules(ctx context.Context) error {
 	}
 
 	if !targetFound {
-		_, err = s.EventBridgeClient.PutTargets(&eventbridge.PutTargetsInput{
+		_, err = s.EventBridgeClient.PutTargets(ctx, &eventbridge.PutTargetsInput{
 			Rule: ruleResp.Name,
-			Targets: []*eventbridge.Target{{
+			Targets: []eventbridgetypes.Target{{
 				Arn: aws.String(queueAttrs.Attributes["QueueArn"]),
 				Id:  aws.String(GenerateQueueName(s.scope.Name())),
 			}},
@@ -126,7 +126,7 @@ func (s Service) reconcileRules(ctx context.Context) error {
 	return nil
 }
 
-func (s Service) createRule() error {
+func (s Service) createRule(ctx context.Context) error {
 	eventPattern := eventPattern{
 		Source:     []string{"aws.ec2"},
 		DetailType: []string{Ec2StateChangeNotification},
@@ -140,24 +140,24 @@ func (s Service) createRule() error {
 	}
 	// create in disabled state so the rule doesn't pick up all EC2 instances. As machines get created,
 	// the rule will get updated to track those machines
-	_, err = s.EventBridgeClient.PutRule(&eventbridge.PutRuleInput{
+	_, err = s.EventBridgeClient.PutRule(ctx, &eventbridge.PutRuleInput{
 		Name:         aws.String(s.getEC2RuleName()),
 		EventPattern: aws.String(string(data)),
-		State:        aws.String(eventbridge.RuleStateDisabled),
+		State:        eventbridgetypes.RuleStateDisabled,
 	})
 
 	return err
 }
 
-func (s Service) deleteRules() error {
-	_, err := s.EventBridgeClient.RemoveTargets(&eventbridge.RemoveTargetsInput{
+func (s Service) deleteRules(ctx context.Context) error {
+	_, err := s.EventBridgeClient.RemoveTargets(ctx, &eventbridge.RemoveTargetsInput{
 		Rule: aws.String(s.getEC2RuleName()),
-		Ids:  aws.StringSlice([]string{GenerateQueueName(s.scope.Name())}),
+		Ids:  []string{GenerateQueueName(s.scope.Name())},
 	})
 	if err != nil && !resourceNotFoundError(err) {
 		return errors.Wrapf(err, "unable to remove target %s for rule %s", GenerateQueueName(s.scope.Name()), s.getEC2RuleName())
 	}
-	_, err = s.EventBridgeClient.DeleteRule(&eventbridge.DeleteRuleInput{
+	_, err = s.EventBridgeClient.DeleteRule(ctx, &eventbridge.DeleteRuleInput{
 		Name: aws.String(s.getEC2RuleName()),
 	})
 
@@ -169,8 +169,8 @@ func (s Service) deleteRules() error {
 }
 
 // AddInstanceToEventPattern will add an instance to an event pattern.
-func (s Service) AddInstanceToEventPattern(instanceID string) error {
-	ruleResp, err := s.EventBridgeClient.DescribeRule(&eventbridge.DescribeRuleInput{
+func (s Service) AddInstanceToEventPattern(ctx context.Context, instanceID string) error {
+	ruleResp, err := s.EventBridgeClient.DescribeRule(ctx, &eventbridge.DescribeRuleInput{
 		Name: aws.String(s.getEC2RuleName()),
 	})
 	if err != nil {
@@ -195,18 +195,18 @@ func (s Service) AddInstanceToEventPattern(instanceID string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.EventBridgeClient.PutRule(&eventbridge.PutRuleInput{
+	_, err = s.EventBridgeClient.PutRule(ctx, &eventbridge.PutRuleInput{
 		Name:         aws.String(s.getEC2RuleName()),
 		EventPattern: aws.String(string(eventData)),
-		State:        aws.String(eventbridge.RuleStateEnabled),
+		State:        eventbridgetypes.RuleStateEnabled,
 	})
 	return err
 }
 
 // RemoveInstanceFromEventPattern attempts a best effort update to the event rule to remove the instance.
 // Any errors encountered won't be blocking.
-func (s Service) RemoveInstanceFromEventPattern(instanceID string) {
-	ruleResp, err := s.EventBridgeClient.DescribeRule(&eventbridge.DescribeRuleInput{
+func (s Service) RemoveInstanceFromEventPattern(ctx context.Context, instanceID string) {
+	ruleResp, err := s.EventBridgeClient.DescribeRule(ctx, &eventbridge.DescribeRuleInput{
 		Name: aws.String(s.getEC2RuleName()),
 	})
 	if err != nil {
@@ -236,13 +236,13 @@ func (s Service) RemoveInstanceFromEventPattern(instanceID string) {
 		input := &eventbridge.PutRuleInput{
 			Name:         aws.String(s.getEC2RuleName()),
 			EventPattern: aws.String(string(eventData)),
-			State:        aws.String(eventbridge.RuleStateEnabled),
+			State:        eventbridgetypes.RuleStateEnabled,
 		}
 
 		if len(e.EventDetail.InstanceIDs) == 0 {
-			input.State = aws.String(eventbridge.RuleStateDisabled)
+			input.State = eventbridgetypes.RuleStateDisabled
 		}
-		_, _ = s.EventBridgeClient.PutRule(input)
+		_, _ = s.EventBridgeClient.PutRule(ctx, input)
 	}
 }
 
@@ -251,10 +251,8 @@ func (s Service) getEC2RuleName() string {
 }
 
 func resourceNotFoundError(err error) bool {
-	if aerr, ok := err.(awserr.Error); ok && aerr.Code() == eventbridge.ErrCodeResourceNotFoundException {
-		return true
-	}
-	return false
+	_, ok := err.(*eventbridgetypes.ResourceNotFoundException)
+	return ok
 }
 
 type eventPattern struct {

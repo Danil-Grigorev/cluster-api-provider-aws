@@ -18,15 +18,13 @@ limitations under the License.
 package instancestate
 
 import (
-	"github.com/aws/aws-sdk-go/service/eventbridge/eventbridgeiface"
-
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
 )
 
 // Service defines the specs for a service.
 type Service struct {
 	scope             scope.EC2Scope
-	EventBridgeClient eventbridgeiface.EventBridgeAPI
+	EventBridgeClient scope.EventBridgeClient
 	SQSClient         scope.SQSAPI
 }
 
@@ -34,7 +32,7 @@ type Service struct {
 func NewService(clusterScope scope.EC2Scope) *Service {
 	return &Service{
 		scope:             clusterScope,
-		EventBridgeClient: scope.NewEventBridgeClient(clusterScope, clusterScope, clusterScope.InfraCluster()),
+		EventBridgeClient: scope.NewEventBridgeClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
 		SQSClient:         scope.NewSQSClientV2(clusterScope, clusterScope, clusterScope, clusterScope.InfraCluster()),
 	}
 }

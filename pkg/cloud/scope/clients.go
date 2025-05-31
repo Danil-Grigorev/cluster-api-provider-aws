@@ -22,6 +22,7 @@ import (
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
 	elasticloadbalancing "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	elasticloadbalancingv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	eventbridgev2 "github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	resourcegroupstaggingapiv2 "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	sqsv2 "github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -38,8 +39,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
-	"github.com/aws/aws-sdk-go/service/eventbridge"
-	"github.com/aws/aws-sdk-go/service/eventbridge/eventbridgeiface"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
@@ -104,6 +103,16 @@ type ELBAPI interface {
 	DescribeTags(ctx context.Context, params *elasticloadbalancing.DescribeTagsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeTagsOutput, error)
 }
 
+// EventBridgeClient is a client that implements eventbridge.Client.
+type EventBridgeClient interface {
+	DescribeRule(ctx context.Context, params *eventbridgev2.DescribeRuleInput, optFns ...func(*eventbridgev2.Options)) (*eventbridgev2.DescribeRuleOutput, error)
+	ListTargetsByRule(ctx context.Context, params *eventbridgev2.ListTargetsByRuleInput, optFns ...func(*eventbridgev2.Options)) (*eventbridgev2.ListTargetsByRuleOutput, error)
+	PutTargets(ctx context.Context, params *eventbridgev2.PutTargetsInput, optFns ...func(*eventbridgev2.Options)) (*eventbridgev2.PutTargetsOutput, error)
+	PutRule(ctx context.Context, params *eventbridgev2.PutRuleInput, optFns ...func(*eventbridgev2.Options)) (*eventbridgev2.PutRuleOutput, error)
+	RemoveTargets(ctx context.Context, params *eventbridgev2.RemoveTargetsInput, optFns ...func(*eventbridgev2.Options)) (*eventbridgev2.RemoveTargetsOutput, error)
+	DeleteRule(ctx context.Context, params *eventbridgev2.DeleteRuleInput, optFns ...func(*eventbridgev2.Options)) (*eventbridgev2.DeleteRuleOutput, error)
+}
+
 // NewASGClient creates a new ASG API client for a given session.
 func NewASGClient(scopeUser cloud.ScopeUsage, session cloud.Session, logger logger.Wrapper, target runtime.Object) autoscalingiface.AutoScalingAPI {
 	asgClient := autoscaling.New(session.Session(), aws.NewConfig().WithLogLevel(awslogs.GetAWSLogLevel(logger.GetLogger())).WithLogger(awslogs.NewWrapLogr(logger.GetLogger())))
@@ -152,16 +161,6 @@ func NewELBv2Client(scopeUser cloud.ScopeUsage, session cloud.Session, logger lo
 	elbClient.Handlers.Complete.PushBack(recordAWSPermissionsIssue(target))
 
 	return elbClient
-}
-
-// NewEventBridgeClient creates a new EventBridge API client for a given session.
-func NewEventBridgeClient(scopeUser cloud.ScopeUsage, session cloud.Session, target runtime.Object) eventbridgeiface.EventBridgeAPI {
-	eventBridgeClient := eventbridge.New(session.Session())
-	eventBridgeClient.Handlers.Build.PushFrontNamed(getUserAgentHandler())
-	eventBridgeClient.Handlers.CompleteAttempt.PushFront(awsmetrics.CaptureRequestMetrics(scopeUser.ControllerName()))
-	eventBridgeClient.Handlers.Complete.PushBack(recordAWSPermissionsIssue(target))
-
-	return eventBridgeClient
 }
 
 // NewResourgeTaggingClient creates a new Resource Tagging API client for a given session.
@@ -309,6 +308,19 @@ func NewELBClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger lo
 		elasticloadbalancing.WithAPIOptions(awsmetricsv2.WithMiddlewares(scopeUser.ControllerName(), target), awsmetricsv2.WithCAPAUserAgentMiddleware()),
 	}
 	return elasticloadbalancing.NewFromConfig(cfg, elbOpts...)
+}
+
+// NewEventBridgeClientV2 creates a new EventBridge API client for a given session using AWS SDK v2.
+func NewEventBridgeClientV2(scopeUser cloud.ScopeUsage, session cloud.Session, logger logger.Wrapper, target runtime.Object) EventBridgeClient {
+	cfg := session.SessionV2()
+	eventBridgeOpts := []func(*eventbridgev2.Options){
+		func(o *eventbridgev2.Options) {
+			o.Logger = logger.GetAWSLogger()
+			o.ClientLogMode = awslogs.GetAWSLogLevelV2(logger.GetLogger())
+		},
+		eventbridgev2.WithAPIOptions(awsmetricsv2.WithMiddlewares(scopeUser.ControllerName(), target), awsmetricsv2.WithCAPAUserAgentMiddleware()),
+	}
+	return eventbridgev2.NewFromConfig(cfg, eventBridgeOpts...)
 }
 
 func recordAWSPermissionsIssue(target runtime.Object) func(r *request.Request) {

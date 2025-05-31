@@ -41,7 +41,7 @@ func (s *Service) reconcileSQSQueue(ctx context.Context) error {
 
 	if err != nil {
 		var qne *types.QueueNameExists
-		if errors.As(err, &qne) {
+		if errors.As(err, &qne) && strings.Contains(err.Error(), qne.ErrorCode()) {
 			return nil
 		}
 	}
@@ -104,7 +104,7 @@ func GenerateQueueName(clusterName string) string {
 
 func queueNotFoundError(err error) bool {
 	var dnfe *types.QueueDoesNotExist
-	return errors.As(err, &dnfe)
+	return errors.As(err, &dnfe) && strings.Contains(err.Error(), dnfe.ErrorCode())
 }
 
 type createPolicyForRuleInput struct {

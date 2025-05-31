@@ -29,7 +29,7 @@ func (s Service) ReconcileEC2Events(ctx context.Context) error {
 
 // DeleteEC2Events will delete a Service's EC2 events.
 func (s Service) DeleteEC2Events(ctx context.Context) error {
-	if err := s.deleteRules(); err != nil {
+	if err := s.deleteRules(ctx); err != nil {
 		return err
 	}
 

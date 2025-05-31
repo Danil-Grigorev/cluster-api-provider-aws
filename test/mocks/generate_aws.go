@@ -34,4 +34,6 @@ limitations under the License.
 //go:generate /usr/bin/env bash -c "cat ../../hack/boilerplate/boilerplate.generatego.txt aws_elbv2v2_mock.go > _aws_elbv2v2_mock.go && mv _aws_elbv2v2_mock.go v2/aws_elbv2_mock.go && rm aws_elbv2v2_mock.go"
 //go:generate ../../hack/tools/bin/mockgen -destination aws_sqsv2_mock.go -package mocks sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope SQSAPI
 //go:generate /usr/bin/env bash -c "cat ../../hack/boilerplate/boilerplate.generatego.txt aws_sqsv2_mock.go > _aws_sqsv2_mock.go && mv _aws_sqsv2_mock.go v2/aws_sqs_mock.go && rm aws_sqsv2_mock.go"
+//go:generate ../../hack/tools/bin/mockgen -destination aws_eventbridgev2_mock.go -package mocks sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope EventBridgeClient
+//go:generate /usr/bin/env bash -c "cat ../../hack/boilerplate/boilerplate.generatego.txt aws_eventbridgev2_mock.go > _aws_eventbridgev2_mock.go && mv _aws_eventbridgev2_mock.go v2/aws_eventbridge_mock.go && rm aws_eventbridgev2_mock.go"
 package mocks
